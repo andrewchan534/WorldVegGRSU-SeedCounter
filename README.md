@@ -4,7 +4,11 @@ A browser-based seed counting prototype for seed bank workflows. The app runs lo
 
 ## Project Structure
 
-- `index.html`, `seedcounter.html`, `app.js`, `styles.css`: static web app files kept at the repository root for simple Apache deployment.
+- `seedcounter/`: deployable static web app folder.
+- `seedcounter/index.html`: main Seed Counter page.
+- `seedcounter/seedcounter.app.js`: app logic with a project-specific filename to avoid collisions with other tools.
+- `seedcounter/seedcounter.styles.css`: app styles with a project-specific filename to avoid collisions with other tools.
+- `index.html`, `seedcounter.html`: lightweight redirects to `seedcounter/` for local convenience and backward compatibility.
 - `01_source_data/sample_photos/`: raw template/sample photos. The filename prefix is the correct seed count, for example `103 (2).jpg` means 103 seeds.
 - `03_scripts/evaluate_samples.py`: local validation script for checking the current algorithm against the sample photos.
 
@@ -12,10 +16,10 @@ Technical folders such as `.git` and `.agents` are intentionally left in place.
 
 ## Local Use
 
-Open `index.html` directly, or serve the folder locally and visit:
+Open `seedcounter/index.html` directly, or serve the folder locally and visit:
 
 ```text
-http://127.0.0.1:8765/
+http://127.0.0.1:8765/seedcounter/
 ```
 
 Recommended photo conditions:
@@ -27,11 +31,21 @@ Recommended photo conditions:
 
 ## Deployment
 
-For deployment to Apache at `https://genebank.worldveg.org/seedcounter.html`, copy these files into the web root:
+For folder-based Apache deployment, copy this folder into the web root:
 
-- `seedcounter.html`
-- `app.js`
-- `styles.css`
+- `seedcounter/`
+
+The primary URL should be:
+
+```text
+https://genebank.worldveg.org/seedcounter/
+```
+
+The root `seedcounter.html` redirect can also be copied to the web root if the older URL should continue forwarding users to the folder-based app:
+
+```text
+https://genebank.worldveg.org/seedcounter.html
+```
 
 The `01_source_data` and `03_scripts` folders are for development and validation. They do not need to be deployed for normal user use.
 

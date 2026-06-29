@@ -3,117 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="0; url=seedcounter/">
   <title>Seed Counter</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="canonical" href="seedcounter/">
 </head>
 <body>
-  <main class="app">
-    <section class="workspace">
-      <header class="topbar">
-        <div>
-          <h1>Seed Counter</h1>
-          <p>Runs locally in the browser with webcam, image upload, and manual adjustment.</p>
-        </div>
-        <div class="result-tile">
-          <span>Estimated Seeds</span>
-          <strong id="countValue">0</strong>
-        </div>
-        <p class="disclaimer">Prototype estimate only. On the current 10-image validation set, relative error ranged from -3.8% to +2.9%, with a mean absolute percentage error of about 1.4%. Accuracy depends on lighting, background, seed type, and spacing.</p>
-      </header>
-
-      <section class="stage">
-        <video id="camera" playsinline muted hidden></video>
-        <canvas id="canvas" width="1280" height="720"></canvas>
-        <div id="emptyState" class="empty-state">
-          <strong>Upload an image or start the webcam</strong>
-          <span>Use a white background, even lighting, and keep seeds slightly separated.</span>
-        </div>
-      </section>
-
-      <section class="metrics" aria-label="Detection results">
-        <div><span>Detected Regions</span><strong id="componentValue">0</strong></div>
-        <div><span>Reference Seed Area</span><strong id="areaValue">Auto</strong></div>
-        <div><span>Manual Adjustment</span><strong id="adjustValue">0</strong></div>
-        <div><span>Source</span><strong id="sourceValue">Not loaded</strong></div>
-      </section>
-    </section>
-
-    <aside class="panel">
-      <section class="control-group">
-        <h2>Image Source</h2>
-        <div class="button-row">
-          <button id="startCamera" type="button">Start Webcam</button>
-          <button id="capturePhoto" type="button" disabled>Capture & Count</button>
-        </div>
-        <label class="file-button">
-          <input id="fileInput" type="file" accept="image/*">
-          Upload Image
-        </label>
-      </section>
-
-      <section class="control-group">
-        <h2>Detection Settings</h2>
-        <label>
-          <span>Ignore Top</span>
-          <input id="topCrop" type="range" min="0" max="45" value="25">
-          <output id="topCropOut">25%</output>
-        </label>
-        <label>
-          <span>Ignore Left</span>
-          <input id="leftCrop" type="range" min="0" max="30" value="3">
-          <output id="leftCropOut">3%</output>
-        </label>
-        <label>
-          <span>Ignore Right</span>
-          <input id="rightCrop" type="range" min="0" max="30" value="3">
-          <output id="rightCropOut">3%</output>
-        </label>
-        <label>
-          <span>Ignore Bottom</span>
-          <input id="bottomCrop" type="range" min="0" max="30" value="2">
-          <output id="bottomCropOut">2%</output>
-        </label>
-        <label>
-          <span>Min Saturation</span>
-          <input id="satMin" type="range" min="0" max="80" value="14">
-          <output id="satMinOut">14</output>
-        </label>
-        <label>
-          <span>Max Brightness</span>
-          <input id="valMax" type="range" min="90" max="255" value="220">
-          <output id="valMaxOut">220</output>
-        </label>
-        <label>
-          <span>Min Region Area</span>
-          <input id="minArea" type="range" min="20" max="1200" value="180">
-          <output id="minAreaOut">180</output>
-        </label>
-        <label>
-          <span>Seed Area (px)</span>
-          <input id="manualArea" type="number" min="0" step="10" placeholder="Auto">
-        </label>
-        <div class="button-row single">
-          <button id="recount" type="button">Recalculate</button>
-        </div>
-      </section>
-
-      <section class="control-group">
-        <h2>Manual Adjustment</h2>
-        <div class="stepper">
-          <button id="minusOne" type="button">-1</button>
-          <button id="resetAdjust" type="button">Reset</button>
-          <button id="plusOne" type="button">+1</button>
-        </div>
-      </section>
-
-      <section class="control-group">
-        <h2>Result</h2>
-        <textarea id="report" readonly rows="7"></textarea>
-        <button id="copyReport" type="button">Copy Result</button>
-      </section>
-    </aside>
-  </main>
-
-  <script src="app.js"></script>
+  <p><a href="seedcounter/">Open Seed Counter</a></p>
+  <script>
+    window.location.replace("seedcounter/");
+  </script>
 </body>
 </html>
