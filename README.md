@@ -1,30 +1,43 @@
 # Seed Counter Prototype
 
-這是一個純前端的種子快速計數原型。影像會在使用者的瀏覽器中用 Canvas 分析，不需要把照片送到伺服器端運算。
+A browser-based seed counting prototype for seed bank workflows. The app runs locally in the browser with JavaScript and uses the user's uploaded photo or webcam capture to estimate the number of seeds in the image.
 
-## 使用方式
+## Project Structure
 
-1. 開啟本機頁面：`http://127.0.0.1:8765/`
-2. 上傳照片，或啟動 webcam 後按 `拍照計數`。
-3. 依照片狀況調整偵測參數：
-   - `忽略上方`：排除標籤、包裝袋或非種子區域。
-   - `最小飽和度`、`最大亮度`：控制種子顏色篩選。
-   - `最小區塊面積`：排除雜訊。
-   - `單粒面積`：可手動輸入校正值；留空時自動估算。
-4. 使用 `+1`、`-1` 做人工修正，並複製結果保存。
+- `index.html`, `seedcounter.html`, `app.js`, `styles.css`: static web app files kept at the repository root for simple Apache deployment.
+- `01_source_data/sample_photos/`: raw template/sample photos. The filename prefix is the correct seed count, for example `103 (2).jpg` means 103 seeds.
+- `03_scripts/evaluate_samples.py`: local validation script for checking the current algorithm against the sample photos.
 
-若直接用 `file://` 開啟 `index.html`，照片上傳仍可使用；webcam 權限通常建議改用 `http://127.0.0.1:8765/` 這類本機網址開啟。
+Technical folders such as `.git` and `.agents` are intentionally left in place.
 
-## 模板照片規則
+## Local Use
 
-`Source` 資料夾中的模板照片供開發評估使用，不會顯示在使用者介面中。檔名開頭數字就是正確種子數量。括弧中的序號不列入數量，例如：
+Open `index.html` directly, or serve the folder locally and visit:
 
-- `103.jpg` = 103 粒
-- `103 (2).jpg` = 103 粒
+```text
+http://127.0.0.1:8765/
+```
 
-## 目前模板評估
+Recommended photo conditions:
 
-使用目前預設參數與 `Source` 中 10 張照片批次測試：
+- White or light background.
+- Even lighting.
+- Seeds separated as much as possible.
+- Seeds may touch, but should not overlap.
+
+## Deployment
+
+For deployment to Apache at `https://genebank.worldveg.org/seedcounter.html`, copy these files into the web root:
+
+- `seedcounter.html`
+- `app.js`
+- `styles.css`
+
+The `01_source_data` and `03_scripts` folders are for development and validation. They do not need to be deployed for normal user use.
+
+## Validation Snapshot
+
+Using the current 10 sample images, the prototype produced this validation snapshot:
 
 | File | Correct | Estimated | Diff |
 | --- | ---: | ---: | ---: |
@@ -39,4 +52,10 @@
 | 55.jpg | 55 | 55 | 0 |
 | 82.jpg | 82 | 83 | +1 |
 
-平均絕對誤差約 1.4 粒；相對誤差範圍約 -3.8% 到 +2.9%，平均絕對百分比誤差約 1.4%。演算法會先找疑似單粒區塊，估算單粒平均面積與變異，再用單粒面積模型拆分連在一起但未重疊的種子區塊。更多模板照片加入後，可用 `tools/evaluate_samples.py` 重新評估預設參數。
+Relative error ranged from about `-3.8%` to `+2.9%`, with a mean absolute percentage error of about `1.4%`.
+
+Run the validation script after adding more template photos:
+
+```powershell
+python 03_scripts/evaluate_samples.py
+```

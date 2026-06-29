@@ -10,7 +10,7 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "Source"
+SOURCE = ROOT / "01_source_data" / "sample_photos"
 
 
 def expected_count(name: str) -> int | None:
