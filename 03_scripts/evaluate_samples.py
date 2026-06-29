@@ -33,10 +33,20 @@ def mask_image(image: Image.Image, top_crop=0.25, left_crop=0.03, right_crop=0.0
             h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
             h *= 360
             v *= 255
+            chroma = max(r, g, b) - min(r, g, b)
             luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
             is_seed_hue = 18 <= h <= 78
             is_not_green = not (85 <= h <= 165 and s > 0.18)
-            if is_seed_hue and is_not_green and s * 100 >= sat_min and v <= val_max and luma >= 45:
+            is_bright_low_color_shadow = luma > 145 and s < 0.24 and chroma < 34
+            if (
+                is_seed_hue
+                and is_not_green
+                and s * 100 >= sat_min
+                and v <= val_max
+                and luma >= 35
+                and chroma >= 10
+                and not is_bright_low_color_shadow
+            ):
                 mask[y * width + x] = 1
     return denoise(mask, width, height), width, height
 
@@ -56,6 +66,19 @@ def denoise(mask: bytearray, width: int, height: int) -> bytearray:
     return out
 
 
+def plausible_component(component: dict[str, float], width: int, height: int, min_area: int) -> bool:
+    box_width = component["max_x"] - component["min_x"] + 1
+    box_height = component["max_y"] - component["min_y"] + 1
+    box_area = box_width * box_height
+    fill_ratio = component["area"] / box_area if box_area else 0
+    aspect_ratio = max(box_width / box_height, box_height / box_width)
+    covers_too_much_frame = box_width > width * 0.62 or box_height > height * 0.62
+    very_large = component["area"] > min_area * 90
+    thin_artifact = aspect_ratio > 7 and component["area"] > min_area * 2
+    sparse_artifact = fill_ratio < 0.10 and component["area"] > min_area * 2
+    return not (covers_too_much_frame and very_large) and not thin_artifact and not sparse_artifact
+
+
 def components(mask: bytearray, width: int, height: int, min_area=180):
     visited = bytearray(len(mask))
     found = []
@@ -65,10 +88,19 @@ def components(mask: bytearray, width: int, height: int, min_area=180):
         visited[i] = 1
         q = deque([i])
         area = 0
+        min_x = width
+        max_x = 0
+        min_y = height
+        max_y = 0
         while q:
             p = q.pop()
             area += 1
             x = p % width
+            y = p // width
+            min_x = min(min_x, x)
+            max_x = max(max_x, x)
+            min_y = min(min_y, y)
+            max_y = max(max_y, y)
             for step in (-1, 1, -width, width):
                 nxt = p + step
                 if nxt < 0 or nxt >= len(mask) or visited[nxt] or not mask[nxt]:
@@ -80,7 +112,9 @@ def components(mask: bytearray, width: int, height: int, min_area=180):
                 visited[nxt] = 1
                 q.append(nxt)
         if area >= min_area:
-            found.append(area)
+            component = {"area": area, "min_x": min_x, "max_x": max_x, "min_y": min_y, "max_y": max_y}
+            if plausible_component(component, width, height, min_area):
+                found.append(area)
     return found
 
 

@@ -228,10 +228,19 @@ function makeMask(imageData, width, height, settings) {
       const g = data[offset + 1];
       const b = data[offset + 2];
       const { h, s, v } = rgbToHsv(r, g, b);
+      const chroma = Math.max(r, g, b) - Math.min(r, g, b);
       const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       const isSeedHue = h >= 18 && h <= 78;
       const isNotGreen = !(h >= 85 && h <= 165 && s > 0.18);
-      const isSeedPixel = isSeedHue && isNotGreen && s * 100 >= settings.satMin && v <= settings.valMax && luma >= 45;
+      const isBrightLowColorShadow = luma > 145 && s < 0.24 && chroma < 34;
+      const isSeedPixel =
+        isSeedHue &&
+        isNotGreen &&
+        s * 100 >= settings.satMin &&
+        v <= settings.valMax &&
+        luma >= 35 &&
+        chroma >= 10 &&
+        !isBrightLowColorShadow;
       if (isSeedPixel) mask[y * width + x] = 1;
     }
   }
@@ -252,6 +261,20 @@ function denoise(mask, width, height) {
     }
   }
   return out;
+}
+
+function isPlausibleComponent(component, imageWidth, imageHeight, minArea) {
+  const boxWidth = component.maxX - component.minX + 1;
+  const boxHeight = component.maxY - component.minY + 1;
+  const boxArea = boxWidth * boxHeight;
+  const fillRatio = boxArea > 0 ? component.area / boxArea : 0;
+  const aspectRatio = Math.max(boxWidth / boxHeight, boxHeight / boxWidth);
+  const coversTooMuchFrame = boxWidth > imageWidth * 0.62 || boxHeight > imageHeight * 0.62;
+  const veryLarge = component.area > minArea * 90;
+  const thinArtifact = aspectRatio > 7 && component.area > minArea * 2;
+  const sparseArtifact = fillRatio < 0.10 && component.area > minArea * 2;
+
+  return !(coversTooMuchFrame && veryLarge) && !thinArtifact && !sparseArtifact;
 }
 
 function connectedComponents(mask, width, height, minArea) {
@@ -296,7 +319,7 @@ function connectedComponents(mask, width, height, minArea) {
     }
 
     if (area >= minArea) {
-      components.push({
+      const component = {
         area,
         cx: sumX / area,
         cy: sumY / area,
@@ -304,7 +327,10 @@ function connectedComponents(mask, width, height, minArea) {
         maxX,
         minY,
         maxY,
-      });
+      };
+      if (isPlausibleComponent(component, width, height, minArea)) {
+        components.push(component);
+      }
     }
   }
   return components;
