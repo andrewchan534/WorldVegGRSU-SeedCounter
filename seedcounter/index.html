@@ -18,7 +18,7 @@
           <span>Estimated Seeds</span>
           <strong id="countValue">0</strong>
         </div>
-        <p class="disclaimer">Prototype estimate only. On the current 10-image validation set, relative error ranged from -3.8% to +2.9%, with a mean absolute percentage error of about 1.4%. Accuracy depends on lighting, background, seed type, and spacing.</p>
+        <p class="disclaimer">Prototype estimate only. On the current 13-image template set, relative error ranged from -5.0% to +5.0%, with a mean absolute percentage error of about 2.2%. Accuracy depends on lighting, background, seed type, spacing, and camera distance.</p>
       </header>
 
       <section class="stage">
@@ -52,27 +52,17 @@
       </section>
 
       <section class="control-group">
+        <h2>Analysis Region</h2>
+        <div class="button-row roi-actions">
+          <button id="startRoi" type="button" disabled>Draw ROI</button>
+          <button id="finishRoi" type="button" disabled>Finish ROI</button>
+          <button id="clearRoi" type="button" disabled>Clear ROI</button>
+        </div>
+        <output id="roiStatus" class="status-line">No ROI</output>
+      </section>
+
+      <section class="control-group">
         <h2>Detection Settings</h2>
-        <label>
-          <span>Ignore Top</span>
-          <input id="topCrop" type="range" min="0" max="45" value="25">
-          <output id="topCropOut">25%</output>
-        </label>
-        <label>
-          <span>Ignore Left</span>
-          <input id="leftCrop" type="range" min="0" max="30" value="3">
-          <output id="leftCropOut">3%</output>
-        </label>
-        <label>
-          <span>Ignore Right</span>
-          <input id="rightCrop" type="range" min="0" max="30" value="3">
-          <output id="rightCropOut">3%</output>
-        </label>
-        <label>
-          <span>Ignore Bottom</span>
-          <input id="bottomCrop" type="range" min="0" max="30" value="2">
-          <output id="bottomCropOut">2%</output>
-        </label>
         <label>
           <span>Min Saturation</span>
           <input id="satMin" type="range" min="0" max="80" value="14">

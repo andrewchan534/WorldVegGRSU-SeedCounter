@@ -233,6 +233,10 @@ video[hidden] {
   gap: 8px;
 }
 
+.roi-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .button-row.single {
   grid-template-columns: 1fr;
 }
@@ -278,6 +282,21 @@ textarea {
   resize: vertical;
   min-height: 96px;
   line-height: 1.4;
+}
+
+.status-line {
+  min-height: 28px;
+  padding: 4px 2px;
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.stage.is-drawing-roi canvas {
+  cursor: crosshair;
+}
+
+.stage.is-editing-roi canvas {
+  cursor: grabbing;
 }
 
 @media (max-width: 980px) {
@@ -352,20 +371,28 @@ textarea {
     order: 3;
   }
 
-  .panel .control-group:nth-of-type(3) {
+  .panel .control-group:nth-of-type(4) {
     order: 4;
   }
 
   .panel .control-group:nth-of-type(2) {
-    order: 5;
+    order: 4;
   }
 
   .panel .control-group:nth-of-type(4) {
+    order: 5;
+  }
+
+  .panel .control-group:nth-of-type(3) {
     order: 6;
   }
 
-  .metrics {
+  .panel .control-group:nth-of-type(5) {
     order: 7;
+  }
+
+  .metrics {
+    order: 8;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }

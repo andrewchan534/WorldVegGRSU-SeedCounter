@@ -51,7 +51,7 @@ The `01_source_data` and `03_scripts` folders are for development and validation
 
 ## Validation Snapshot
 
-Using the current 10 sample images, the prototype produced this validation snapshot:
+Using the current 13 sample images with the unsupervised area model, the prototype produced this validation snapshot:
 
 | File | Correct | Estimated | Diff |
 | --- | ---: | ---: | ---: |
@@ -60,13 +60,16 @@ Using the current 10 sample images, the prototype produced this validation snaps
 | 103 (3).jpg | 103 | 103 | 0 |
 | 103 (4).jpg | 103 | 104 | +1 |
 | 103.jpg | 103 | 104 | +1 |
-| 104.jpg | 104 | 100 | -4 |
-| 108.jpg | 108 | 110 | +2 |
-| 115.jpg | 115 | 115 | 0 |
+| 104.jpg | 104 | 104 | 0 |
+| 108.jpg | 108 | 108 | 0 |
+| 115.jpg | 115 | 117 | +2 |
+| 20(2).png | 20 | 21 | +1 |
+| 20(3).png | 20 | 19 | -1 |
+| 20.png | 20 | 21 | +1 |
 | 55.jpg | 55 | 55 | 0 |
-| 82.jpg | 82 | 83 | +1 |
+| 82.jpg | 82 | 86 | +4 |
 
-Relative error ranged from about `-3.8%` to `+2.9%`, with a mean absolute percentage error of about `1.4%`.
+Relative error ranged from `-5.0%` to `+5.0%`, with a mean absolute percentage error of about `2.2%`. The filename prefix is used only by the validation script to calculate accuracy; it is not used by the browser counting algorithm.
 
 Run the validation script after adding more template photos:
 
