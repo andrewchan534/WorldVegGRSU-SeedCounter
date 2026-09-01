@@ -1,3 +1,5 @@
+const APP_VERSION = "v1.1.0";
+
 const samples = [
   "20.png",
   "20(2).png",
@@ -22,8 +24,10 @@ const state = {
   last: null,
   cameraStream: null,
   roiPoints: [],
+  fallbackRectangle: null,
   isDrawingRoi: false,
   draggingRoiIndex: null,
+  draggingRectangleHandle: null,
   roiDragFrame: null,
 };
 
@@ -85,6 +89,15 @@ function setCanvasSize(width, height) {
   els.canvas.height = height;
 }
 
+function createFallbackRectangle() {
+  state.fallbackRectangle = {
+    top: Math.floor(els.canvas.height * (defaultSettings.topCrop / 100)),
+    left: Math.floor(els.canvas.width * (defaultSettings.leftCrop / 100)),
+    right: Math.floor(els.canvas.width * (1 - defaultSettings.rightCrop / 100)),
+    bottom: Math.floor(els.canvas.height * (1 - defaultSettings.bottomCrop / 100)),
+  };
+}
+
 function loadImage(src, name) {
   const img = new Image();
   img.onload = () => {
@@ -96,6 +109,7 @@ function loadImage(src, name) {
     state.roiPoints = [];
     state.isDrawingRoi = false;
     setCanvasSize(img.naturalWidth, img.naturalHeight);
+    createFallbackRectangle();
     suggestDetectionParameters();
     showLoadedStage();
     processImage();
@@ -159,18 +173,21 @@ function syncRoiStatus() {
   if (!els.roiStatus) return;
   const pointCount = state.roiPoints.length;
   els.stage.classList.toggle("is-drawing-roi", state.isDrawingRoi);
-  els.stage.classList.toggle("is-editing-roi", state.draggingRoiIndex !== null);
+  els.stage.classList.toggle("is-editing-roi", state.draggingRoiIndex !== null || state.draggingRectangleHandle !== null);
+  els.stage.classList.toggle("is-editable-rectangle", Boolean(state.image && pointCount < 3 && !state.isDrawingRoi));
   els.startRoi.disabled = !state.image;
   els.finishRoi.disabled = !state.isDrawingRoi || pointCount < 3;
   els.clearRoi.disabled = !state.image || pointCount === 0;
   if (state.draggingRoiIndex !== null) {
     els.roiStatus.textContent = `Editing point ${state.draggingRoiIndex + 1}`;
+  } else if (state.draggingRectangleHandle !== null) {
+    els.roiStatus.textContent = "Editing automatic rectangle";
   } else if (state.isDrawingRoi) {
     els.roiStatus.textContent = `${pointCount} point${pointCount === 1 ? "" : "s"} selected`;
   } else if (pointCount >= 3) {
     els.roiStatus.textContent = `Polygon ROI active (${pointCount} points)`;
   } else {
-    els.roiStatus.textContent = "No ROI";
+    els.roiStatus.textContent = state.image ? "Automatic rectangle - drag corners or sides to refine" : "No ROI";
   }
 }
 
@@ -223,6 +240,45 @@ function updateDraggedRoiPoint(point) {
   });
 }
 
+function rectangleHandleAt(point) {
+  const rectangle = state.fallbackRectangle;
+  if (!rectangle || state.roiPoints.length >= 3 || state.isDrawingRoi) return null;
+  const radius = Math.max(16, Math.min(42, els.canvas.width * 0.014));
+  const corners = [
+    ["top-left", rectangle.left, rectangle.top],
+    ["top-right", rectangle.right, rectangle.top],
+    ["bottom-right", rectangle.right, rectangle.bottom],
+    ["bottom-left", rectangle.left, rectangle.bottom],
+  ];
+  const corner = corners.find(([, x, y]) => Math.hypot(point.x - x, point.y - y) <= radius);
+  if (corner) return corner[0];
+  if (point.x >= rectangle.left && point.x <= rectangle.right) {
+    if (Math.abs(point.y - rectangle.top) <= radius) return "top";
+    if (Math.abs(point.y - rectangle.bottom) <= radius) return "bottom";
+  }
+  if (point.y >= rectangle.top && point.y <= rectangle.bottom) {
+    if (Math.abs(point.x - rectangle.left) <= radius) return "left";
+    if (Math.abs(point.x - rectangle.right) <= radius) return "right";
+  }
+  return null;
+}
+
+function updateDraggedRectangle(point) {
+  const handle = state.draggingRectangleHandle;
+  const rectangle = state.fallbackRectangle;
+  if (!handle || !rectangle) return;
+  const minimumSize = Math.max(36, Math.min(els.canvas.width, els.canvas.height) * 0.05);
+  if (handle.includes("left")) rectangle.left = clamp(point.x, 0, rectangle.right - minimumSize);
+  if (handle.includes("right")) rectangle.right = clamp(point.x, rectangle.left + minimumSize, els.canvas.width);
+  if (handle.includes("top")) rectangle.top = clamp(point.y, 0, rectangle.bottom - minimumSize);
+  if (handle.includes("bottom")) rectangle.bottom = clamp(point.y, rectangle.top + minimumSize, els.canvas.height);
+  if (state.roiDragFrame) return;
+  state.roiDragFrame = requestAnimationFrame(() => {
+    state.roiDragFrame = null;
+    processImage();
+  });
+}
+
 function pointInPolygon(x, y, polygon) {
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
@@ -254,10 +310,11 @@ function makeMask(imageData, width, height, settings) {
   const mask = new Uint8Array(width * height);
   const data = imageData.data;
   const roi = settings.roiPoints?.length >= 3 ? settings.roiPoints : null;
-  const topY = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.y)))) : Math.floor(height * settings.topCrop);
-  const leftX = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.x)))) : Math.floor(width * settings.leftCrop);
-  const rightX = roi ? Math.min(width, Math.ceil(Math.max(...roi.map((point) => point.x)))) : Math.floor(width * (1 - settings.rightCrop));
-  const bottomY = roi ? Math.min(height, Math.ceil(Math.max(...roi.map((point) => point.y)))) : Math.floor(height * (1 - settings.bottomCrop));
+  const rectangle = settings.rectangleRoi;
+  const topY = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.y)))) : rectangle ? Math.floor(rectangle.top) : Math.floor(height * settings.topCrop);
+  const leftX = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.x)))) : rectangle ? Math.floor(rectangle.left) : Math.floor(width * settings.leftCrop);
+  const rightX = roi ? Math.min(width, Math.ceil(Math.max(...roi.map((point) => point.x)))) : rectangle ? Math.ceil(rectangle.right) : Math.floor(width * (1 - settings.rightCrop));
+  const bottomY = roi ? Math.min(height, Math.ceil(Math.max(...roi.map((point) => point.y)))) : rectangle ? Math.ceil(rectangle.bottom) : Math.floor(height * (1 - settings.bottomCrop));
 
   for (let y = topY; y < bottomY; y += 1) {
     for (let x = leftX; x < rightX; x += 1) {
@@ -293,10 +350,11 @@ function makeFaintCandidateMask(imageData, width, height, settings) {
   const mask = new Uint8Array(width * height);
   const data = imageData.data;
   const roi = settings.roiPoints?.length >= 3 ? settings.roiPoints : null;
-  const topY = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.y)))) : Math.floor(height * settings.topCrop);
-  const leftX = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.x)))) : Math.floor(width * settings.leftCrop);
-  const rightX = roi ? Math.min(width, Math.ceil(Math.max(...roi.map((point) => point.x)))) : Math.floor(width * (1 - settings.rightCrop));
-  const bottomY = roi ? Math.min(height, Math.ceil(Math.max(...roi.map((point) => point.y)))) : Math.floor(height * (1 - settings.bottomCrop));
+  const rectangle = settings.rectangleRoi;
+  const topY = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.y)))) : rectangle ? Math.floor(rectangle.top) : Math.floor(height * settings.topCrop);
+  const leftX = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.x)))) : rectangle ? Math.floor(rectangle.left) : Math.floor(width * settings.leftCrop);
+  const rightX = roi ? Math.min(width, Math.ceil(Math.max(...roi.map((point) => point.x)))) : rectangle ? Math.ceil(rectangle.right) : Math.floor(width * (1 - settings.rightCrop));
+  const bottomY = roi ? Math.min(height, Math.ceil(Math.max(...roi.map((point) => point.y)))) : rectangle ? Math.ceil(rectangle.bottom) : Math.floor(height * (1 - settings.bottomCrop));
 
   for (let y = topY; y < bottomY; y += 1) {
     for (let x = leftX; x < rightX; x += 1) {
@@ -791,6 +849,11 @@ function drawOverlay(items, total, settings) {
   ctx.fillStyle = "#66716b";
   ctx.font = "13px Segoe UI, Arial";
   ctx.fillText("estimated seeds", 78, 52);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(30,37,33,.78)";
+  ctx.font = "600 13px Segoe UI, Arial";
+  ctx.fillText(APP_VERSION, els.canvas.width - 16, els.canvas.height - 16);
+  ctx.textAlign = "left";
   ctx.restore();
 }
 
@@ -820,12 +883,33 @@ function drawAnalysisRegion(settings, roi) {
     return;
   }
 
-  const topY = Math.floor(els.canvas.height * settings.topCrop);
-  const leftX = Math.floor(els.canvas.width * settings.leftCrop);
-  const rightX = Math.floor(els.canvas.width * (1 - settings.rightCrop));
-  const bottomY = Math.floor(els.canvas.height * (1 - settings.bottomCrop));
+  const rectangle = settings.rectangleRoi || {
+    top: Math.floor(els.canvas.height * settings.topCrop),
+    left: Math.floor(els.canvas.width * settings.leftCrop),
+    right: Math.floor(els.canvas.width * (1 - settings.rightCrop)),
+    bottom: Math.floor(els.canvas.height * (1 - settings.bottomCrop)),
+  };
+  const { top: topY, left: leftX, right: rightX, bottom: bottomY } = rectangle;
   ctx.fillRect(leftX, topY, rightX - leftX, bottomY - topY);
   ctx.strokeRect(leftX, topY, rightX - leftX, bottomY - topY);
+  [
+    [leftX, topY],
+    [rightX, topY],
+    [rightX, bottomY],
+    [leftX, bottomY],
+    [(leftX + rightX) / 2, topY],
+    [rightX, (topY + bottomY) / 2],
+    [(leftX + rightX) / 2, bottomY],
+    [leftX, (topY + bottomY) / 2],
+  ].forEach(([x, y]) => {
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#2d6d4f";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  });
 }
 
 function processImage() {
@@ -844,6 +928,7 @@ function processImage() {
     valMax: Number(els.controls.valMax.value),
     minArea: Number(els.controls.minArea.value),
     roiPoints: state.roiPoints.length >= 3 && !state.isDrawingRoi ? state.roiPoints : null,
+    rectangleRoi: state.fallbackRectangle,
   };
   const imageData = ctx.getImageData(0, 0, width, height);
   let components = detectComponentsAtMinArea(imageData, width, height, settings, settings.minArea);
@@ -878,7 +963,7 @@ function updateResult() {
   els.adjustment.textContent = state.adjustment > 0 ? `+${state.adjustment}` : String(state.adjustment);
   els.source.textContent = state.sourceName || "Not loaded";
   els.report.value = last
-    ? `Source: ${state.sourceName}\nEstimated seeds: ${last.total}\nDetected regions: ${last.components.length}\nReference seed area: ${last.referenceStats.area} px\nReference method: ${last.referenceStats.method}\nAnalysis region: ${state.roiPoints.length >= 3 ? "polygon ROI" : "fallback rectangle"}\nLikely single-seed average area: ${last.referenceStats.averageArea} px\nSeed area variation: ${Math.round(last.referenceStats.cv * 100)}%\nManual adjustment: ${state.adjustment}${expected}${difference}`
+    ? `Version: ${APP_VERSION}\nSource: ${state.sourceName}\nEstimated seeds: ${last.total}\nDetected regions: ${last.components.length}\nReference seed area: ${last.referenceStats.area} px\nReference method: ${last.referenceStats.method}\nAnalysis region: ${state.roiPoints.length >= 3 ? "polygon ROI" : "adjustable rectangle"}\nLikely single-seed average area: ${last.referenceStats.averageArea} px\nSeed area variation: ${Math.round(last.referenceStats.cv * 100)}%\nManual adjustment: ${state.adjustment}${expected}${difference}`
     : "";
   syncRoiStatus();
 }
@@ -912,6 +997,7 @@ function capturePhoto() {
     state.adjustment = 0;
     state.roiPoints = [];
     state.isDrawingRoi = false;
+    createFallbackRectangle();
     suggestDetectionParameters();
     showLoadedStage();
     processImage();
@@ -954,18 +1040,21 @@ function attachEvents() {
     state.roiPoints = [];
     state.isDrawingRoi = true;
     state.draggingRoiIndex = null;
+    state.draggingRectangleHandle = null;
     processImage();
   });
   els.finishRoi.addEventListener("click", () => {
     if (state.roiPoints.length < 3) return;
     state.isDrawingRoi = false;
     state.draggingRoiIndex = null;
+    state.draggingRectangleHandle = null;
     processImage();
   });
   els.clearRoi.addEventListener("click", () => {
     state.roiPoints = [];
     state.isDrawingRoi = false;
     state.draggingRoiIndex = null;
+    state.draggingRectangleHandle = null;
     processImage();
   });
   els.canvas.addEventListener("pointerdown", (event) => {
@@ -974,10 +1063,18 @@ function attachEvents() {
     if (!point) return;
     if (!state.isDrawingRoi) {
       const pointIndex = nearestRoiPointIndex(point);
-      if (pointIndex === null) return;
-      state.draggingRoiIndex = pointIndex;
+      if (pointIndex !== null) {
+        state.draggingRoiIndex = pointIndex;
+        els.canvas.setPointerCapture(event.pointerId);
+        updateDraggedRoiPoint(point);
+        event.preventDefault();
+        return;
+      }
+      const rectangleHandle = rectangleHandleAt(point);
+      if (!rectangleHandle) return;
+      state.draggingRectangleHandle = rectangleHandle;
       els.canvas.setPointerCapture(event.pointerId);
-      updateDraggedRoiPoint(point);
+      updateDraggedRectangle(point);
       event.preventDefault();
       return;
     }
@@ -985,15 +1082,17 @@ function attachEvents() {
     processImage();
   });
   els.canvas.addEventListener("pointermove", (event) => {
-    if (!state.image || state.draggingRoiIndex === null) return;
+    if (!state.image || (state.draggingRoiIndex === null && state.draggingRectangleHandle === null)) return;
     const point = canvasPointFromEvent(event);
     if (!point) return;
-    updateDraggedRoiPoint(point);
+    if (state.draggingRoiIndex !== null) updateDraggedRoiPoint(point);
+    else updateDraggedRectangle(point);
     event.preventDefault();
   });
   const stopRoiDrag = (event) => {
-    if (state.draggingRoiIndex === null) return;
+    if (state.draggingRoiIndex === null && state.draggingRectangleHandle === null) return;
     state.draggingRoiIndex = null;
+    state.draggingRectangleHandle = null;
     if (state.roiDragFrame) {
       cancelAnimationFrame(state.roiDragFrame);
       state.roiDragFrame = null;
@@ -1006,7 +1105,7 @@ function attachEvents() {
   els.canvas.addEventListener("pointerup", stopRoiDrag);
   els.canvas.addEventListener("pointercancel", stopRoiDrag);
   els.canvas.addEventListener("lostpointercapture", (event) => {
-    if (state.draggingRoiIndex === null) return;
+    if (state.draggingRoiIndex === null && state.draggingRectangleHandle === null) return;
     stopRoiDrag(event);
   });
 }

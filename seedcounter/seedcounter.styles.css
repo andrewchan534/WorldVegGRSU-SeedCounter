@@ -299,6 +299,15 @@ textarea {
   cursor: grabbing;
 }
 
+.stage.is-editable-rectangle canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+.stage.is-drawing-roi canvas {
+  touch-action: none;
+}
+
 @media (max-width: 980px) {
   body {
     overflow: auto;
