@@ -234,7 +234,7 @@ video[hidden] {
 }
 
 .roi-actions {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .button-row.single {
@@ -293,6 +293,11 @@ textarea {
 
 .stage.is-drawing-roi canvas {
   cursor: crosshair;
+}
+
+.stage.has-editable-circle canvas {
+  cursor: grab;
+  touch-action: none;
 }
 
 .stage.is-editing-roi canvas {

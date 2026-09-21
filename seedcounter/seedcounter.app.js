@@ -1,4 +1,4 @@
-const APP_VERSION = "v1.1.0";
+const APP_VERSION = "v1.2.0";
 
 const samples = [
   "20.png",
@@ -24,9 +24,14 @@ const state = {
   last: null,
   cameraStream: null,
   roiPoints: [],
+  circleRoi: null,
   fallbackRectangle: null,
   isDrawingRoi: false,
+  isDrawingCircle: false,
+  circleStart: null,
   draggingRoiIndex: null,
+  draggingCircleHandle: null,
+  circleDragOffset: null,
   draggingRectangleHandle: null,
   roiDragFrame: null,
 };
@@ -61,6 +66,7 @@ const els = {
   minusOne: document.getElementById("minusOne"),
   resetAdjust: document.getElementById("resetAdjust"),
   startRoi: document.getElementById("startRoi"),
+  startCircle: document.getElementById("startCircle"),
   finishRoi: document.getElementById("finishRoi"),
   clearRoi: document.getElementById("clearRoi"),
   roiStatus: document.getElementById("roiStatus"),
@@ -107,7 +113,9 @@ function loadImage(src, name) {
     state.expectedCount = parseExpectedCount(name);
     state.adjustment = 0;
     state.roiPoints = [];
+    state.circleRoi = null;
     state.isDrawingRoi = false;
+    state.isDrawingCircle = false;
     setCanvasSize(img.naturalWidth, img.naturalHeight);
     createFallbackRectangle();
     suggestDetectionParameters();
@@ -172,20 +180,30 @@ function suggestDetectionParameters() {
 function syncRoiStatus() {
   if (!els.roiStatus) return;
   const pointCount = state.roiPoints.length;
-  els.stage.classList.toggle("is-drawing-roi", state.isDrawingRoi);
-  els.stage.classList.toggle("is-editing-roi", state.draggingRoiIndex !== null || state.draggingRectangleHandle !== null);
-  els.stage.classList.toggle("is-editable-rectangle", Boolean(state.image && pointCount < 3 && !state.isDrawingRoi));
+  els.stage.classList.toggle("is-drawing-roi", state.isDrawingRoi || state.isDrawingCircle);
+  els.stage.classList.toggle("is-editing-roi", state.draggingRoiIndex !== null || state.draggingCircleHandle !== null || state.draggingRectangleHandle !== null);
+  els.stage.classList.toggle("is-editable-rectangle", Boolean(state.image && pointCount < 3 && !state.circleRoi && !state.isDrawingRoi && !state.isDrawingCircle));
+  els.stage.classList.toggle("has-editable-circle", Boolean(state.image && state.circleRoi && !state.isDrawingCircle));
   els.startRoi.disabled = !state.image;
+  els.startCircle.disabled = !state.image;
   els.finishRoi.disabled = !state.isDrawingRoi || pointCount < 3;
-  els.clearRoi.disabled = !state.image || pointCount === 0;
+  els.clearRoi.disabled = !state.image || (pointCount === 0 && !state.circleRoi && !state.isDrawingCircle);
   if (state.draggingRoiIndex !== null) {
     els.roiStatus.textContent = `Editing point ${state.draggingRoiIndex + 1}`;
+  } else if (state.draggingCircleHandle === "center") {
+    els.roiStatus.textContent = "Moving circle center";
+  } else if (state.draggingCircleHandle === "edge") {
+    els.roiStatus.textContent = "Adjusting circle diameter";
   } else if (state.draggingRectangleHandle !== null) {
     els.roiStatus.textContent = "Editing automatic rectangle";
   } else if (state.isDrawingRoi) {
     els.roiStatus.textContent = `${pointCount} point${pointCount === 1 ? "" : "s"} selected`;
+  } else if (state.isDrawingCircle) {
+    els.roiStatus.textContent = "Drag across the image to define the circle diameter";
   } else if (pointCount >= 3) {
     els.roiStatus.textContent = `Polygon ROI active (${pointCount} points)`;
+  } else if (state.circleRoi) {
+    els.roiStatus.textContent = "Circle ROI active - drag center or edge to refine";
   } else {
     els.roiStatus.textContent = state.image ? "Automatic rectangle - drag corners or sides to refine" : "No ROI";
   }
@@ -233,6 +251,10 @@ function updateDraggedRoiPoint(point) {
     x: clamp(point.x, 0, els.canvas.width),
     y: clamp(point.y, 0, els.canvas.height),
   };
+  scheduleRecalculation();
+}
+
+function scheduleRecalculation() {
   if (state.roiDragFrame) return;
   state.roiDragFrame = requestAnimationFrame(() => {
     state.roiDragFrame = null;
@@ -240,9 +262,49 @@ function updateDraggedRoiPoint(point) {
   });
 }
 
+function setCircleFromDiameter(start, end) {
+  state.circleRoi = {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+    radius: Math.max(12, Math.hypot(end.x - start.x, end.y - start.y) / 2),
+    edgeAngle: Math.atan2(end.y - start.y, end.x - start.x),
+  };
+}
+
+function circleEdgePoint(circle = state.circleRoi) {
+  if (!circle) return null;
+  return {
+    x: circle.x + circle.radius * Math.cos(circle.edgeAngle),
+    y: circle.y + circle.radius * Math.sin(circle.edgeAngle),
+  };
+}
+
+function circleHandleAt(point) {
+  const circle = state.circleRoi;
+  if (!circle || state.isDrawingRoi || state.isDrawingCircle || state.roiPoints.length >= 3) return null;
+  const hitRadius = Math.max(16, Math.min(42, els.canvas.width * 0.014));
+  if (Math.hypot(point.x - circle.x, point.y - circle.y) <= hitRadius) return "center";
+  const edge = circleEdgePoint(circle);
+  if (Math.hypot(point.x - edge.x, point.y - edge.y) <= hitRadius) return "edge";
+  return null;
+}
+
+function updateDraggedCircle(point) {
+  const circle = state.circleRoi;
+  if (!circle || !state.draggingCircleHandle) return;
+  if (state.draggingCircleHandle === "center") {
+    circle.x = point.x - state.circleDragOffset.x;
+    circle.y = point.y - state.circleDragOffset.y;
+  } else {
+    circle.radius = Math.max(12, Math.hypot(point.x - circle.x, point.y - circle.y));
+    circle.edgeAngle = Math.atan2(point.y - circle.y, point.x - circle.x);
+  }
+  scheduleRecalculation();
+}
+
 function rectangleHandleAt(point) {
   const rectangle = state.fallbackRectangle;
-  if (!rectangle || state.roiPoints.length >= 3 || state.isDrawingRoi) return null;
+  if (!rectangle || state.circleRoi || state.roiPoints.length >= 3 || state.isDrawingRoi || state.isDrawingCircle) return null;
   const radius = Math.max(16, Math.min(42, els.canvas.width * 0.014));
   const corners = [
     ["top-left", rectangle.left, rectangle.top],
@@ -272,11 +334,7 @@ function updateDraggedRectangle(point) {
   if (handle.includes("right")) rectangle.right = clamp(point.x, rectangle.left + minimumSize, els.canvas.width);
   if (handle.includes("top")) rectangle.top = clamp(point.y, 0, rectangle.bottom - minimumSize);
   if (handle.includes("bottom")) rectangle.bottom = clamp(point.y, rectangle.top + minimumSize, els.canvas.height);
-  if (state.roiDragFrame) return;
-  state.roiDragFrame = requestAnimationFrame(() => {
-    state.roiDragFrame = null;
-    processImage();
-  });
+  scheduleRecalculation();
 }
 
 function pointInPolygon(x, y, polygon) {
@@ -290,6 +348,43 @@ function pointInPolygon(x, y, polygon) {
     if (intersects) inside = !inside;
   }
   return inside;
+}
+
+function analysisBounds(width, height, settings) {
+  const roi = settings.roiPoints?.length >= 3 ? settings.roiPoints : null;
+  const circle = settings.circleRoi?.radius > 0 ? settings.circleRoi : null;
+  const rectangle = settings.rectangleRoi;
+  if (roi) {
+    return {
+      roi,
+      circle: null,
+      topY: Math.max(0, Math.floor(Math.min(...roi.map((point) => point.y)))),
+      leftX: Math.max(0, Math.floor(Math.min(...roi.map((point) => point.x)))),
+      rightX: Math.min(width, Math.ceil(Math.max(...roi.map((point) => point.x)))),
+      bottomY: Math.min(height, Math.ceil(Math.max(...roi.map((point) => point.y)))),
+    };
+  }
+  if (circle) {
+    return {
+      roi: null,
+      circle,
+      topY: Math.max(0, Math.floor(circle.y - circle.radius)),
+      leftX: Math.max(0, Math.floor(circle.x - circle.radius)),
+      rightX: Math.min(width, Math.ceil(circle.x + circle.radius)),
+      bottomY: Math.min(height, Math.ceil(circle.y + circle.radius)),
+    };
+  }
+  if (rectangle) {
+    return { roi: null, circle: null, topY: Math.floor(rectangle.top), leftX: Math.floor(rectangle.left), rightX: Math.ceil(rectangle.right), bottomY: Math.ceil(rectangle.bottom) };
+  }
+  return {
+    roi: null,
+    circle: null,
+    topY: Math.floor(height * settings.topCrop),
+    leftX: Math.floor(width * settings.leftCrop),
+    rightX: Math.floor(width * (1 - settings.rightCrop)),
+    bottomY: Math.floor(height * (1 - settings.bottomCrop)),
+  };
 }
 
 function rgbToHsv(r, g, b) {
@@ -309,16 +404,12 @@ function rgbToHsv(r, g, b) {
 function makeMask(imageData, width, height, settings) {
   const mask = new Uint8Array(width * height);
   const data = imageData.data;
-  const roi = settings.roiPoints?.length >= 3 ? settings.roiPoints : null;
-  const rectangle = settings.rectangleRoi;
-  const topY = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.y)))) : rectangle ? Math.floor(rectangle.top) : Math.floor(height * settings.topCrop);
-  const leftX = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.x)))) : rectangle ? Math.floor(rectangle.left) : Math.floor(width * settings.leftCrop);
-  const rightX = roi ? Math.min(width, Math.ceil(Math.max(...roi.map((point) => point.x)))) : rectangle ? Math.ceil(rectangle.right) : Math.floor(width * (1 - settings.rightCrop));
-  const bottomY = roi ? Math.min(height, Math.ceil(Math.max(...roi.map((point) => point.y)))) : rectangle ? Math.ceil(rectangle.bottom) : Math.floor(height * (1 - settings.bottomCrop));
+  const { roi, circle, topY, leftX, rightX, bottomY } = analysisBounds(width, height, settings);
 
   for (let y = topY; y < bottomY; y += 1) {
     for (let x = leftX; x < rightX; x += 1) {
       if (roi && !pointInPolygon(x + 0.5, y + 0.5, roi)) continue;
+      if (circle && Math.hypot(x + 0.5 - circle.x, y + 0.5 - circle.y) > circle.radius) continue;
       const offset = (y * width + x) * 4;
       const r = data[offset];
       const g = data[offset + 1];
@@ -349,16 +440,12 @@ function makeMask(imageData, width, height, settings) {
 function makeFaintCandidateMask(imageData, width, height, settings) {
   const mask = new Uint8Array(width * height);
   const data = imageData.data;
-  const roi = settings.roiPoints?.length >= 3 ? settings.roiPoints : null;
-  const rectangle = settings.rectangleRoi;
-  const topY = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.y)))) : rectangle ? Math.floor(rectangle.top) : Math.floor(height * settings.topCrop);
-  const leftX = roi ? Math.max(0, Math.floor(Math.min(...roi.map((point) => point.x)))) : rectangle ? Math.floor(rectangle.left) : Math.floor(width * settings.leftCrop);
-  const rightX = roi ? Math.min(width, Math.ceil(Math.max(...roi.map((point) => point.x)))) : rectangle ? Math.ceil(rectangle.right) : Math.floor(width * (1 - settings.rightCrop));
-  const bottomY = roi ? Math.min(height, Math.ceil(Math.max(...roi.map((point) => point.y)))) : rectangle ? Math.ceil(rectangle.bottom) : Math.floor(height * (1 - settings.bottomCrop));
+  const { roi, circle, topY, leftX, rightX, bottomY } = analysisBounds(width, height, settings);
 
   for (let y = topY; y < bottomY; y += 1) {
     for (let x = leftX; x < rightX; x += 1) {
       if (roi && !pointInPolygon(x + 0.5, y + 0.5, roi)) continue;
+      if (circle && Math.hypot(x + 0.5 - circle.x, y + 0.5 - circle.y) > circle.radius) continue;
       const offset = (y * width + x) * 4;
       const r = data[offset];
       const g = data[offset + 1];
@@ -883,6 +970,34 @@ function drawAnalysisRegion(settings, roi) {
     return;
   }
 
+  const circle = settings.circleRoi;
+  if (circle) {
+    const edge = circleEdgePoint(circle);
+    ctx.beginPath();
+    ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([8, 7]);
+    ctx.beginPath();
+    ctx.moveTo(circle.x - circle.radius * Math.cos(circle.edgeAngle), circle.y - circle.radius * Math.sin(circle.edgeAngle));
+    ctx.lineTo(edge.x, edge.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    [
+      [circle.x, circle.y],
+      [edge.x, edge.y],
+    ].forEach(([x, y]) => {
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#2d6d4f";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+    return;
+  }
+
   const rectangle = settings.rectangleRoi || {
     top: Math.floor(els.canvas.height * settings.topCrop),
     left: Math.floor(els.canvas.width * settings.leftCrop),
@@ -928,6 +1043,7 @@ function processImage() {
     valMax: Number(els.controls.valMax.value),
     minArea: Number(els.controls.minArea.value),
     roiPoints: state.roiPoints.length >= 3 && !state.isDrawingRoi ? state.roiPoints : null,
+    circleRoi: state.circleRoi,
     rectangleRoi: state.fallbackRectangle,
   };
   const imageData = ctx.getImageData(0, 0, width, height);
@@ -963,7 +1079,7 @@ function updateResult() {
   els.adjustment.textContent = state.adjustment > 0 ? `+${state.adjustment}` : String(state.adjustment);
   els.source.textContent = state.sourceName || "Not loaded";
   els.report.value = last
-    ? `Version: ${APP_VERSION}\nSource: ${state.sourceName}\nEstimated seeds: ${last.total}\nDetected regions: ${last.components.length}\nReference seed area: ${last.referenceStats.area} px\nReference method: ${last.referenceStats.method}\nAnalysis region: ${state.roiPoints.length >= 3 ? "polygon ROI" : "adjustable rectangle"}\nLikely single-seed average area: ${last.referenceStats.averageArea} px\nSeed area variation: ${Math.round(last.referenceStats.cv * 100)}%\nManual adjustment: ${state.adjustment}${expected}${difference}`
+    ? `Version: ${APP_VERSION}\nSource: ${state.sourceName}\nEstimated seeds: ${last.total}\nDetected regions: ${last.components.length}\nReference seed area: ${last.referenceStats.area} px\nReference method: ${last.referenceStats.method}\nAnalysis region: ${state.roiPoints.length >= 3 ? "polygon ROI" : state.circleRoi ? "circular ROI" : "adjustable rectangle"}\nLikely single-seed average area: ${last.referenceStats.averageArea} px\nSeed area variation: ${Math.round(last.referenceStats.cv * 100)}%\nManual adjustment: ${state.adjustment}${expected}${difference}`
     : "";
   syncRoiStatus();
 }
@@ -996,7 +1112,9 @@ function capturePhoto() {
     state.expectedCount = null;
     state.adjustment = 0;
     state.roiPoints = [];
+    state.circleRoi = null;
     state.isDrawingRoi = false;
+    state.isDrawingCircle = false;
     createFallbackRectangle();
     suggestDetectionParameters();
     showLoadedStage();
@@ -1038,22 +1156,43 @@ function attachEvents() {
   els.startRoi.addEventListener("click", () => {
     if (!state.image) return;
     state.roiPoints = [];
+    state.circleRoi = null;
     state.isDrawingRoi = true;
+    state.isDrawingCircle = false;
     state.draggingRoiIndex = null;
+    state.draggingCircleHandle = null;
+    state.draggingRectangleHandle = null;
+    processImage();
+  });
+  els.startCircle.addEventListener("click", () => {
+    if (!state.image) return;
+    state.roiPoints = [];
+    state.circleRoi = null;
+    state.isDrawingRoi = false;
+    state.isDrawingCircle = true;
+    state.circleStart = null;
+    state.draggingRoiIndex = null;
+    state.draggingCircleHandle = null;
     state.draggingRectangleHandle = null;
     processImage();
   });
   els.finishRoi.addEventListener("click", () => {
     if (state.roiPoints.length < 3) return;
     state.isDrawingRoi = false;
+    state.isDrawingCircle = false;
     state.draggingRoiIndex = null;
+    state.draggingCircleHandle = null;
     state.draggingRectangleHandle = null;
     processImage();
   });
   els.clearRoi.addEventListener("click", () => {
     state.roiPoints = [];
+    state.circleRoi = null;
     state.isDrawingRoi = false;
+    state.isDrawingCircle = false;
+    state.circleStart = null;
     state.draggingRoiIndex = null;
+    state.draggingCircleHandle = null;
     state.draggingRectangleHandle = null;
     processImage();
   });
@@ -1061,12 +1200,31 @@ function attachEvents() {
     if (!state.image) return;
     const point = canvasPointFromEvent(event);
     if (!point) return;
+    if (state.isDrawingCircle) {
+      state.circleStart = point;
+      setCircleFromDiameter(point, point);
+      els.canvas.setPointerCapture(event.pointerId);
+      processImage();
+      event.preventDefault();
+      return;
+    }
     if (!state.isDrawingRoi) {
       const pointIndex = nearestRoiPointIndex(point);
       if (pointIndex !== null) {
         state.draggingRoiIndex = pointIndex;
         els.canvas.setPointerCapture(event.pointerId);
         updateDraggedRoiPoint(point);
+        event.preventDefault();
+        return;
+      }
+      const circleHandle = circleHandleAt(point);
+      if (circleHandle) {
+        state.draggingCircleHandle = circleHandle;
+        state.circleDragOffset = circleHandle === "center"
+          ? { x: point.x - state.circleRoi.x, y: point.y - state.circleRoi.y }
+          : null;
+        els.canvas.setPointerCapture(event.pointerId);
+        updateDraggedCircle(point);
         event.preventDefault();
         return;
       }
@@ -1082,16 +1240,31 @@ function attachEvents() {
     processImage();
   });
   els.canvas.addEventListener("pointermove", (event) => {
-    if (!state.image || (state.draggingRoiIndex === null && state.draggingRectangleHandle === null)) return;
+    if (!state.image) return;
     const point = canvasPointFromEvent(event);
     if (!point) return;
-    if (state.draggingRoiIndex !== null) updateDraggedRoiPoint(point);
-    else updateDraggedRectangle(point);
+    if (state.isDrawingCircle && state.circleStart) {
+      setCircleFromDiameter(state.circleStart, point);
+      scheduleRecalculation();
+    } else if (state.draggingRoiIndex !== null) {
+      updateDraggedRoiPoint(point);
+    } else if (state.draggingCircleHandle !== null) {
+      updateDraggedCircle(point);
+    } else if (state.draggingRectangleHandle !== null) {
+      updateDraggedRectangle(point);
+    } else {
+      return;
+    }
     event.preventDefault();
   });
   const stopRoiDrag = (event) => {
-    if (state.draggingRoiIndex === null && state.draggingRectangleHandle === null) return;
+    const hasActiveInteraction = state.isDrawingCircle || state.draggingRoiIndex !== null || state.draggingCircleHandle !== null || state.draggingRectangleHandle !== null;
+    if (!hasActiveInteraction) return;
+    state.isDrawingCircle = false;
+    state.circleStart = null;
     state.draggingRoiIndex = null;
+    state.draggingCircleHandle = null;
+    state.circleDragOffset = null;
     state.draggingRectangleHandle = null;
     if (state.roiDragFrame) {
       cancelAnimationFrame(state.roiDragFrame);
@@ -1105,7 +1278,7 @@ function attachEvents() {
   els.canvas.addEventListener("pointerup", stopRoiDrag);
   els.canvas.addEventListener("pointercancel", stopRoiDrag);
   els.canvas.addEventListener("lostpointercapture", (event) => {
-    if (state.draggingRoiIndex === null && state.draggingRectangleHandle === null) return;
+    if (!state.isDrawingCircle && state.draggingRoiIndex === null && state.draggingCircleHandle === null && state.draggingRectangleHandle === null) return;
     stopRoiDrag(event);
   });
 }
